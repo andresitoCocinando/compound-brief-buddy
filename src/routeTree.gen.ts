@@ -9,38 +9,99 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SavedRouteImport } from './routes/saved'
+import { Route as RecentRouteImport } from './routes/recent'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BriefSlugRouteImport } from './routes/brief.$slug'
 
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SavedRoute = SavedRouteImport.update({
+  id: '/saved',
+  path: '/saved',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecentRoute = RecentRouteImport.update({
+  id: '/recent',
+  path: '/recent',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BriefSlugRoute = BriefSlugRouteImport.update({
+  id: '/brief/$slug',
+  path: '/brief/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/recent': typeof RecentRoute
+  '/saved': typeof SavedRoute
+  '/settings': typeof SettingsRoute
+  '/brief/$slug': typeof BriefSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/recent': typeof RecentRoute
+  '/saved': typeof SavedRoute
+  '/settings': typeof SettingsRoute
+  '/brief/$slug': typeof BriefSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/recent': typeof RecentRoute
+  '/saved': typeof SavedRoute
+  '/settings': typeof SettingsRoute
+  '/brief/$slug': typeof BriefSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/recent' | '/saved' | '/settings' | '/brief/$slug'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/recent' | '/saved' | '/settings' | '/brief/$slug'
+  id: '__root__' | '/' | '/recent' | '/saved' | '/settings' | '/brief/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  RecentRoute: typeof RecentRoute
+  SavedRoute: typeof SavedRoute
+  SettingsRoute: typeof SettingsRoute
+  BriefSlugRoute: typeof BriefSlugRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/saved': {
+      id: '/saved'
+      path: '/saved'
+      fullPath: '/saved'
+      preLoaderRoute: typeof SavedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recent': {
+      id: '/recent'
+      path: '/recent'
+      fullPath: '/recent'
+      preLoaderRoute: typeof RecentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +109,22 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/brief/$slug': {
+      id: '/brief/$slug'
+      path: '/brief/$slug'
+      fullPath: '/brief/$slug'
+      preLoaderRoute: typeof BriefSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  RecentRoute: RecentRoute,
+  SavedRoute: SavedRoute,
+  SettingsRoute: SettingsRoute,
+  BriefSlugRoute: BriefSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

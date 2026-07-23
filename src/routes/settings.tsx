@@ -19,13 +19,13 @@ function Settings() {
   const rows = [
     {
       title: "AI research provider",
-      desc: "Perplexity Sonar — live web search + synthesis.",
-      value: connected ? "Connected" : "Not connected (set PERPLEXITY_API_KEY)",
+      desc: "Gemini 2.5 Flash — Google Search grounding + synthesis.",
+      value: connected ? "Connected" : "Not connected (set GEMINI_API_KEY)",
       ok: connected,
     },
     {
       title: "Data sources",
-      desc: "Live web search via Perplexity Sonar.",
+      desc: "Live web search via Gemini Google Search grounding.",
       value: connected ? "Live" : "Not connected",
       ok: connected,
     },

@@ -1,157 +1,91 @@
 import { createServerFn } from "@tanstack/react-start";
-import type { Brief, Confidence } from "@/data/sampleBriefs";
+import type { Brief } from "@/data/sampleBriefs";
 
 // ---------------------------------------------------------------------------
-// Real web research via Perplexity's Sonar API.
+// Real web research via Google's Gemini API with Search Grounding.
 //
-// Runs server-side only (createServerFn) so PERPLEXITY_API_KEY never reaches
-// the client bundle. Perplexity does live web search + synthesis in a single
-// call and can be constrained to a JSON schema, so we don't need a separate
-// search step (Tavily/Firecrawl) + separate LLM step.
+// Runs server-side only (createServerFn) so GEMINI_API_KEY never reaches the
+// client bundle. Gemini's `google_search` tool does live web search, and the
+// model synthesizes the result in the same call.
 //
-// Env: set PERPLEXITY_API_KEY in .env (server-only, do NOT prefix with VITE_).
+// Note: Gemini doesn't reliably support forcing a strict JSON response
+// schema *together* with the google_search tool in one call, so instead we
+// instruct the model very explicitly to return JSON only, and parse the text
+// defensively (stripping markdown code fences etc.) rather than relying on
+// API-level schema enforcement.
+//
+// Env: set GEMINI_API_KEY in .env (server-only, do NOT prefix with VITE_).
+// Get a key at https://aistudio.google.com/app/apikey
 // ---------------------------------------------------------------------------
 
-const PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions";
-
-const CONFIDENCE_ENUM = ["high", "medium", "low"] as const;
-
-// JSON schema for the parts of Brief that actually need research.
-// slug / website / generatedAt are filled in by us, not the model.
-const briefSchema = {
-  type: "object",
-  properties: {
-    company: { type: "string" },
-    snapshot: {
-      type: "object",
-      properties: {
-        description: { type: "string" },
-        industry: { type: "string" },
-        hq: { type: "string" },
-        employees: { type: "string" },
-        funding: { type: "string" },
-        stage: { type: "string" },
-        news: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              title: { type: "string" },
-              source: { type: "string" },
-              date: { type: "string" },
-            },
-            required: ["title", "source", "date"],
-          },
-        },
-      },
-      required: ["description", "industry", "hq", "employees", "funding", "stage", "news"],
-    },
-    signals: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          label: { type: "string" },
-          confidence: { type: "string", enum: CONFIDENCE_ENUM },
-          why: { type: "string" },
-        },
-        required: ["label", "confidence", "why"],
-      },
-    },
-    decisionMakers: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          name: { type: "string" },
-          role: { type: "string" },
-          why: { type: "string" },
-        },
-        required: ["name", "role", "why"],
-      },
-    },
-    opportunity: {
-      type: "object",
-      properties: {
-        whyCompound: { type: "string" },
-        priorities: { type: "array", items: { type: "string" } },
-        entryPoint: { type: "string" },
-        expansion: { type: "array", items: { type: "string" } },
-      },
-      required: ["whyCompound", "priorities", "entryPoint", "expansion"],
-    },
-    outreach: {
-      type: "object",
-      properties: {
-        opener: { type: "string" },
-        angle: { type: "string" },
-        talkingPoints: { type: "array", items: { type: "string" } },
-        objections: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: { objection: { type: "string" }, response: { type: "string" } },
-            required: ["objection", "response"],
-          },
-        },
-        nextStep: { type: "string" },
-      },
-      required: ["opener", "angle", "talkingPoints", "objections", "nextStep"],
-    },
-    buyingSignals: {
-      type: "object",
-      properties: {
-        score: { type: "number" },
-        whyNow: { type: "string" },
-        increased: { type: "array", items: { type: "string" } },
-        missing: { type: "array", items: { type: "string" } },
-      },
-      required: ["score", "whyNow", "increased", "missing"],
-    },
-    confidence: {
-      type: "object",
-      properties: {
-        snapshot: { type: "string", enum: CONFIDENCE_ENUM },
-        signals: { type: "string", enum: CONFIDENCE_ENUM },
-        decisionMakers: { type: "string", enum: CONFIDENCE_ENUM },
-        opportunity: { type: "string", enum: CONFIDENCE_ENUM },
-        outreach: { type: "string", enum: CONFIDENCE_ENUM },
-        buyingSignals: { type: "string", enum: CONFIDENCE_ENUM },
-      },
-      required: [
-        "snapshot",
-        "signals",
-        "decisionMakers",
-        "opportunity",
-        "outreach",
-        "buyingSignals",
-      ],
-    },
-  },
-  required: [
-    "company",
-    "snapshot",
-    "signals",
-    "decisionMakers",
-    "opportunity",
-    "outreach",
-    "buyingSignals",
-    "confidence",
-  ],
-} as const;
+const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 type ResearchedBrief = Omit<Brief, "slug" | "website" | "generatedAt">;
 
 const SYSTEM_PROMPT = `You are a B2B sales research analyst working for Compound Law, a legal-tech company selling to founders and GTM/ops leaders at growth-stage startups.
 
-Given a company name or website, search the live web and produce a prospect brief. Be specific and factual — cite real news, real people, real numbers where you find them. If you cannot verify something, say so explicitly in the relevant field and mark its confidence as "low" rather than inventing detail.
+Given a company name or website, use Google Search to research it and produce a prospect brief. Be specific and factual — cite real news, real people, real numbers where you find them. If you cannot verify something, say so explicitly in the relevant field and mark its confidence as "low" rather than inventing detail.
 
 Every "confidence" field must honestly reflect how well-sourced that section is:
 - "high": corroborated by multiple recent, credible sources
 - "medium": found in one credible source or inferred from strong context
 - "low": not found; you are giving a best-effort, clearly-flagged guess
 
-Output must match the given JSON schema exactly. No prose outside the JSON.`;
+Respond with ONLY a single JSON object — no markdown code fences, no prose before or after — matching exactly this shape:
+
+{
+  "company": string,
+  "snapshot": {
+    "description": string,
+    "industry": string,
+    "hq": string,
+    "employees": string,
+    "funding": string,
+    "stage": string,
+    "news": [{ "title": string, "source": string, "date": string }]
+  },
+  "signals": [{ "label": string, "confidence": "high"|"medium"|"low", "why": string }],
+  "decisionMakers": [{ "name": string, "role": string, "why": string }],
+  "opportunity": {
+    "whyCompound": string,
+    "priorities": string[],
+    "entryPoint": string,
+    "expansion": string[]
+  },
+  "outreach": {
+    "opener": string,
+    "angle": string,
+    "talkingPoints": string[],
+    "objections": [{ "objection": string, "response": string }],
+    "nextStep": string
+  },
+  "buyingSignals": {
+    "score": number,
+    "whyNow": string,
+    "increased": string[],
+    "missing": string[]
+  },
+  "confidence": {
+    "snapshot": "high"|"medium"|"low",
+    "signals": "high"|"medium"|"low",
+    "decisionMakers": "high"|"medium"|"low",
+    "opportunity": "high"|"medium"|"low",
+    "outreach": "high"|"medium"|"low",
+    "buyingSignals": "high"|"medium"|"low"
+  }
+}`;
+
+function extractJson(rawText: string): string {
+  // Strip ```json ... ``` or ``` ... ``` fences if the model added them
+  // despite instructions, and grab the outermost { ... } block.
+  const fenced = rawText.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced ? fenced[1] : rawText;
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  if (start === -1 || end === -1 || end < start) return candidate.trim();
+  return candidate.slice(start, end + 1);
+}
 
 export const researchCompany = createServerFn({ method: "POST" })
   .validator((input: string) => input)
@@ -159,32 +93,27 @@ export const researchCompany = createServerFn({ method: "POST" })
     async ({
       data: input,
     }): Promise<{ ok: true; brief: ResearchedBrief } | { ok: false; reason: string }> => {
-      const apiKey = process.env.PERPLEXITY_API_KEY;
+      const apiKey = process.env.GEMINI_API_KEY;
 
       if (!apiKey) {
-        return { ok: false, reason: "PERPLEXITY_API_KEY is not set on the server." };
+        return { ok: false, reason: "GEMINI_API_KEY is not set on the server." };
       }
 
       try {
-        const response = await fetch(PERPLEXITY_URL, {
+        const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "sonar-pro",
-            messages: [
-              { role: "system", content: SYSTEM_PROMPT },
+            contents: [
               {
                 role: "user",
-                content: `Research this company and build a prospect brief: ${input}`,
+                parts: [{ text: `Research this company and build a prospect brief: ${input}` }],
               },
             ],
-            response_format: {
-              type: "json_schema",
-              json_schema: { schema: briefSchema },
+            systemInstruction: {
+              parts: [{ text: SYSTEM_PROMPT }],
             },
+            tools: [{ google_search: {} }],
           }),
         });
 
@@ -192,18 +121,20 @@ export const researchCompany = createServerFn({ method: "POST" })
           const errText = await response.text();
           return {
             ok: false,
-            reason: `Perplexity API error ${response.status}: ${errText.slice(0, 300)}`,
+            reason: `Gemini API error ${response.status}: ${errText.slice(0, 300)}`,
           };
         }
 
         const payload = await response.json();
-        const content = payload?.choices?.[0]?.message?.content;
+        const rawText: string | undefined = payload?.candidates?.[0]?.content?.parts
+          ?.map((p: { text?: string }) => p.text ?? "")
+          .join("");
 
-        if (!content) {
-          return { ok: false, reason: "Perplexity response had no content." };
+        if (!rawText) {
+          return { ok: false, reason: "Gemini response had no text content." };
         }
 
-        const parsed = JSON.parse(content) as ResearchedBrief;
+        const parsed = JSON.parse(extractJson(rawText)) as ResearchedBrief;
         return { ok: true, brief: parsed };
       } catch (error) {
         return {
@@ -215,7 +146,7 @@ export const researchCompany = createServerFn({ method: "POST" })
   );
 
 export function hasResearchKey(): boolean {
-  return Boolean(process.env.PERPLEXITY_API_KEY);
+  return Boolean(process.env.GEMINI_API_KEY);
 }
 
 export const checkResearchStatus = createServerFn({ method: "GET" }).handler(async () => {

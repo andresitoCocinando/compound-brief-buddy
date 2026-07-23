@@ -12,4 +12,9 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Override the Cloudflare default from @lovable.dev/vite-tanstack-config —
+  // we're deploying this build to Vercel, not Cloudflare Workers.
+  nitro: {
+    preset: "vercel",
+  },
 });

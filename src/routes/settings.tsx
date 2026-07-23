@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Settings as SettingsIcon } from "lucide-react";
+import { checkResearchStatus } from "@/lib/webResearch";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -8,10 +9,40 @@ export const Route = createFileRoute("/settings")({
       { name: "description", content: "Configure research sources and outreach preferences." },
     ],
   }),
+  loader: () => checkResearchStatus(),
   component: Settings,
 });
 
 function Settings() {
+  const { connected } = Route.useLoaderData();
+
+  const rows = [
+    {
+      title: "AI research provider",
+      desc: "Perplexity Sonar — live web search + synthesis.",
+      value: connected ? "Connected" : "Not connected (set PERPLEXITY_API_KEY)",
+      ok: connected,
+    },
+    {
+      title: "Data sources",
+      desc: "Live web search via Perplexity Sonar.",
+      value: connected ? "Live" : "Not connected",
+      ok: connected,
+    },
+    {
+      title: "Outreach voice",
+      desc: "Tone used in generated openers.",
+      value: "Founder-to-founder, direct",
+      ok: true,
+    },
+    {
+      title: "Team workspace",
+      desc: "Shared briefs across your GTM team.",
+      value: "Compound Law · GTM",
+      ok: true,
+    },
+  ];
+
   return (
     <div className="max-w-3xl mx-auto px-6 py-10">
       <div className="flex items-center gap-2 mb-1">
@@ -21,18 +52,18 @@ function Settings() {
       <p className="text-sm text-muted-foreground mb-6">Configure research sources and defaults.</p>
 
       <div className="space-y-4">
-        {[
-          { title: "AI research provider", desc: "Choose the model powering brief generation.", value: "Mock (demo mode)" },
-          { title: "Data sources", desc: "Firecrawl, Perplexity, LinkedIn, Crunchbase.", value: "Not connected" },
-          { title: "Outreach voice", desc: "Tone used in generated openers.", value: "Founder-to-founder, direct" },
-          { title: "Team workspace", desc: "Shared briefs across your GTM team.", value: "Compound Law · GTM" },
-        ].map((s, i) => (
-          <div key={i} className="rounded-xl border border-border bg-card p-4 flex items-center justify-between">
+        {rows.map((s, i) => (
+          <div
+            key={i}
+            className="rounded-xl border border-border bg-card p-4 flex items-center justify-between"
+          >
             <div>
               <div className="text-sm font-medium text-foreground">{s.title}</div>
               <div className="text-xs text-muted-foreground mt-0.5">{s.desc}</div>
             </div>
-            <div className="text-xs text-muted-foreground">{s.value}</div>
+            <div className={`text-xs ${s.ok ? "text-emerald-600" : "text-muted-foreground"}`}>
+              {s.value}
+            </div>
           </div>
         ))}
       </div>
